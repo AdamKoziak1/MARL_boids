@@ -12,6 +12,9 @@ from vmas.simulator.utils import (
   Color
 )
 
+from vmas.simulator.scenario import BaseScenario
+from BoidAgent import BoidAgent
+
 class MyScenario(BaseScenario):
 
   #####################################################################
@@ -62,7 +65,7 @@ class MyScenario(BaseScenario):
       linear_friction=0.05,  # Optional friction
       angular_friction=0.02,  # Optional angular friction
     )
-
+    self.world = world
     known_colors = [
           Color.GREEN, # Team 1
           Color.RED,    # Team 2
@@ -76,17 +79,51 @@ class MyScenario(BaseScenario):
     for team in range(self.n_teams):
       teams[team] = []
       for agent_num in range(int(self.n_agents//self.n_teams)):
+        lf = 5
+        lr = 5
+        max_speed = 5
+        max_steering_angle = 20
+        agent_width = 5
+        agent = Agent(
+                name=f"agent_{agent_num}",
+                shape=Box(length=lf + lr, width=agent_width),
+                color=tuple(
+                    torch.rand(3, device=world.device, dtype=torch.float32).tolist()
+                ),
+                collide=False,
+                render_action=False,
+                u_range=[
+                    max_speed,
+                    max_steering_angle,
+                ],  # Control command serves as velocity command
+                u_multiplier=[1, 1],
+                max_speed=max_speed,
+                dynamics=BoidAgent(  # Use the kinematic bicycle model for each agent
+                    world,
+                    width=agent_width,
+                    l_f=lf,
+                    l_r=lr,
+                    max_steering_angle=max_steering_angle,
+                    integration="rk4",  # one of {"euler", "rk4"}
+                ),
+            )
 
-        agent = BoidAgent(
-          collide=True,
-          color=known_colors[team],
-          render_action=True,
-          position=1,
-          velocity=1,
-          sensor_range=1.0,
-          max_speed=1.0,
-          max_force=0.1
-        )
+        # agent = BoidAgent(
+        #   collide=True,
+        #   color=known_colors[team],
+        #   render_action=True,
+        #   position=1,
+        #   velocity=1,
+        #   sensor_range=1.0,
+        #   max_speed=1.0,
+        #   max_force=0.1,
+        #   world=world,
+        #   width=1,
+        #   l_f=1,
+        #   l_r=1,
+        #   max_steering_angle=25,
+        #   integration = "euler",  # one of "euler", "rk4"
+        # )
 
         agent.pos_rew = torch.zeros(
           batch_dim, device=device
@@ -132,7 +169,7 @@ class MyScenario(BaseScenario):
   #####################################################################
   ###                    observation function                       ###
   #####################################################################
-  def observation(agent, world):
+  def observation(self, agent):
     """
     Collect the relevant observation data for the given agent from the world.
     Only consider other Boids within the agent's sensor range.
@@ -143,7 +180,7 @@ class MyScenario(BaseScenario):
     }
 
     # Example: Relative positions and velocities of nearby agents (simple flocking)
-    for other_agent in world.agents:
+    for other_agent in self.world.agents:
       if other_agent != agent:
         # Calculate the distance between agents
         distance = torch.norm(agent.position - other_agent.position)

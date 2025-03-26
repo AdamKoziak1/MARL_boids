@@ -1,3 +1,12 @@
+from vmas.simulator.core import Agent, Box, Landmark, Sphere, World
+!pip install vmas
+!apt-get update
+!apt-get install -y x11-utils python3-opengl xvfb
+!pip install pyvirtualdisplay
+import pyvirtualdisplay
+display = pyvirtualdisplay.Display(visible=False, size=(1400, 900))
+display.start()
+from vmas.simulator.scenario import BaseScenario
 import torch
 from torch import Tensor
 from vmas.simulator.core import (
@@ -12,9 +21,6 @@ from vmas.simulator.utils import (
   Color
 )
 
-from vmas.simulator.scenario import BaseScenario
-from BoidAgent import BoidAgent
-
 class MyScenario(BaseScenario):
 
   #####################################################################
@@ -25,14 +31,15 @@ class MyScenario(BaseScenario):
 
     ''' INFO FROM KWARGS '''
     ''' Number of agents '''
-    self.n_friends = kwargs.pop("friends", 5)
-    self.n_enemies = kwargs.pop("enemies", 5)
-    self.n_agents = self.n_friends + self.n_enemies
+    # self.n_friends = kwargs.pop("friends", 5)
+    # self.n_enemies = kwargs.pop("enemies", 5)
+    # self.n_agents = self.n_friends + self.n_enemies
+    self.n_agents = kwargs.pop("n_agents", 5)
     self.n_teams = kwargs.pop("teams", 2)
 
     ''' Number of non-agent entities '''
-    self.n_obstacles = kwargs.pop("n_obstacles", 2)
-    self.n_goals = kwargs.pop("n_obstacles", 3)
+    # self.n_obstacles = kwargs.pop("n_obstacles", 2)
+    self.n_goals = kwargs.pop("n_goals", 3)
 
     ''' cordinates for entities spawning '''
     self.world_spawning_x = kwargs.pop("world_spawning_x", 1)
@@ -65,50 +72,40 @@ class MyScenario(BaseScenario):
       linear_friction=0.05,  # Optional friction
       angular_friction=0.02,  # Optional angular friction
     )
-    self.world = world
+
     known_colors = [
           Color.GREEN, # Team 1
           Color.RED,    # Team 2
-          Color.YELLOW
+          Color.YELLOW # Rewards
     ]
 
     self.goals = []
+
+    # sensors = [SenseSphere(world)]
 
     ''' Add agents '''
     teams = {}
     for team in range(self.n_teams):
       teams[team] = []
-      for agent_num in range(int(self.n_agents//self.n_teams)):
-        lf = 5
-        lr = 5
-        max_speed = 5
-        max_steering_angle = 20
-        agent_width = 5
+      for agent_num in range(int(self.n_agents)):
+
+        sensors = [SenseSphere(world)]
         agent = Agent(
-                name=f"agent_{agent_num}",
-                shape=Box(length=lf + lr, width=agent_width),
-                color=tuple(
-                    torch.rand(3, device=world.device, dtype=torch.float32).tolist()
-                ),
-                collide=False,
-                render_action=False,
-                u_range=[
-                    max_speed,
-                    max_steering_angle,
-                ],  # Control command serves as velocity command
-                u_multiplier=[1, 1],
-                max_speed=max_speed,
-                dynamics=BoidAgent(  # Use the kinematic bicycle model for each agent
-                    world,
-                    width=agent_width,
-                    l_f=lf,
-                    l_r=lr,
-                    max_steering_angle=max_steering_angle,
-                    integration="rk4",  # one of {"euler", "rk4"}
-                ),
-            )
+          name=f"team_{team}_agent_{agent_num}",
+          collide=True,
+          color=known_colors[team],
+          render_action=True,
+          sensors=sensors,
+          shape=Sphere(radius=0.1),
+          u_range=[1, 1],  # Ranges for actions
+          u_multiplier=[1, 1],  # Action multipliers
+          dynamics=BoidDynamics()  # If you got to its class you can see it has 2 actions: force_x, and force_y
+        )
 
         # agent = BoidAgent(
+        #   # name=f"team_{team}_agent_{agent_num}",
+        #   name="michael",
+        #   sensors=sensors,
         #   collide=True,
         #   color=known_colors[team],
         #   render_action=True,
@@ -116,13 +113,7 @@ class MyScenario(BaseScenario):
         #   velocity=1,
         #   sensor_range=1.0,
         #   max_speed=1.0,
-        #   max_force=0.1,
-        #   world=world,
-        #   width=1,
-        #   l_f=1,
-        #   l_r=1,
-        #   max_steering_angle=25,
-        #   integration = "euler",  # one of "euler", "rk4"
+        #   max_force=0.1
         # )
 
         agent.pos_rew = torch.zeros(
@@ -169,33 +160,23 @@ class MyScenario(BaseScenario):
   #####################################################################
   ###                    observation function                       ###
   #####################################################################
-  def observation(self, agent):
-    """
-    Collect the relevant observation data for the given agent from the world.
-    Only consider other Boids within the agent's sensor range.
-    """
+  def observation(self, agent: Agent):
+    # Measure observations from the agent's sensors
+    sensor_observations = [sensor.measure() for sensor in agent.sensors]
+
+    # Flatten and concatenate sensor data into a single tensor
     obs = {
-      "pos": agent.position,
-      "vel": agent.velocity,
+        "obs": torch.cat(sensor_observations, dim=-1),
+        "pos": agent.state.pos,
+        "vel": agent.state.vel,
     }
 
-    # Example: Relative positions and velocities of nearby agents (simple flocking)
-    for other_agent in self.world.agents:
-      if other_agent != agent:
-        # Calculate the distance between agents
-        distance = torch.norm(agent.position - other_agent.position)
-        if distance <= agent.sensor_range:  # Check if within the sensor range
-          # Relative position and velocity of nearby Boid
-          relative_pos = other_agent.position - agent.position
-          relative_vel = other_agent.velocity - agent.velocity
-          obs[f"relative_pos_{id(other_agent)}"] = relative_pos
-          obs[f"relative_vel_{id(other_agent)}"] = relative_vel
-
-  # Optionally add more observations (like obstacles, goal positions, etc.)
     return obs
+
 
   #####################################################################
   ###                       reward function                         ###
   #####################################################################
-  def reward(self, agent: BoidAgent):
-    return agent.captured_objects  # Assuming this is tracked elsewhere
+  def reward(self, agent: Agent):
+    # Dummy reward: Just return 1 for every call to the reward function
+    return torch.tensor(1.0)

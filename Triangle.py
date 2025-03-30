@@ -1,10 +1,11 @@
 # !pip install vmas
 from vmas.simulator.core import Shape
+from vmas.simulator import rendering
 import numpy as np
 import math
 
 class Triangle(Shape):
-  def __init__(self, base: float = 10, height: float = 10):
+  def __init__(self, base: float = 0.1, height: float = 0.15):
     assert base > 0, f"Base must be > 0, got {base}"
     assert height > 0, f"Height must be > 0, got {height}"
     self.base = base
@@ -102,12 +103,9 @@ class Triangle(Shape):
     return math.sqrt(self.base**2 + self.height**2) / 2
 
   def get_geometry(self) -> "Geom":
-    from vmas.simulator import rendering
-
     # Vertices of the triangle (centered at the origin)
-    A = (-self.base / 2, -self.height / 2)  # Left base
-    B = (self.base / 2, -self.height / 2)   # Right base
-    C = (0, self.height / 2)                # Top
+    A = (-self.height * 0.5, self.base * 0.5)  # Left base
+    B = (-self.height * 0.5, -self.base * 0.5)   # Right base
+    C = (self.height * 0.5, 0)                # Top
 
-    # Return geometry as a polygon
     return rendering.make_polygon([A, B, C])

@@ -18,8 +18,8 @@ class Scenario(BaseScenario):
   def make_world(self, batch_dim: int, device: torch.device, **kwargs):
     self.batch_dim = batch_dim
     self.device=device
-    self.world_size_x = kwargs.pop("world_size_x", 2)
-    self.world_size_y = kwargs.pop("world_size_y", 2)
+    self.world_size_x = kwargs.pop("world_size_x", 3)
+    self.world_size_y = kwargs.pop("world_size_y", 3)
     self.plot_grid = True
 
     ##############################
@@ -32,14 +32,17 @@ class Scenario(BaseScenario):
     self.min_distance_between_entities = (kwargs.pop("agent_radius", 0.1) * 2 + 0.05)
 
     ''' Agent entities '''
-    self.n_agents = kwargs.pop("n_agents", 2)
+    self.n_agents = kwargs.pop("n_agents", 10)
     self.n_teams = kwargs.pop("teams", 2)
 
     ''' Goal entities '''
-    self.n_goals = kwargs.pop("n_goals", 5)
+    self.n_goals = kwargs.pop("n_goals", 7)
     self.goal_color = kwargs.pop("goal_colour", Color.YELLOW)
+
     self.flat_goal_reward = kwargs.pop("flat_goal_reward", 100)
-    self.goal_range = kwargs.pop("goal_range", 1.0)
+    self.flat_goal_reward = torch.full((self.batch_dim,), self.flat_goal_reward, device=self.device)
+
+    self.goal_range = kwargs.pop("goal_range", 0.4)
     self.goal_threshold = kwargs.pop("goal_threshold", 2)
     self.goal_respawn = kwargs.pop("goal_respawn", True)
 
@@ -181,9 +184,8 @@ class Scenario(BaseScenario):
     is_last = agent == self.world.agents[-1]
 
     ''' Taken from the discovery.py scenario '''
-    goal_reward = 0
+    goal_reward = torch.zeros((self.batch_dim,), device=self.device)
     if is_first:
-      pass
       ''' negative reward for time passing - don't think it's relevant for BOIDS '''
       # self.time_rew = torch.full(
       #   (self.world.batch_dim,),
@@ -209,7 +211,7 @@ class Scenario(BaseScenario):
       self.covered_goals = self.agents_per_goal >= self.goal_threshold
 
       ''' Flat reward for each goal captured by the team '''
-      goal_reward = 0
+      goal_reward = torch.zeros((self.batch_dim,), device=self.device)
       # print(self.covered_goals)
       # print(self.covered_goals.shape())
       for goal_covered in self.covered_goals[0]:
@@ -249,17 +251,13 @@ class Scenario(BaseScenario):
           )[self.covered_goals[:, i]]
 
     ''' Negative reward for touching boundaries (walls) '''
-    coll_pen = 0
-    pos_x = agent.state.pos[0][0]
-    pos_y = agent.state.pos[0][1]
-    if abs(pos_x) == self.world_size_x or abs(pos_y) == self.world_size_y:
-      coll_pen = -1  # Apply negative penalty for wall collisions
-
+    coll_pen = torch.where(abs(agent.state.pos[0][0]) == self.world_size_x or abs(agent.state.pos[0][1]) == self.world_size_y, -1, 0)
+    
     ''' Combining goal reward and collision penalty '''
     reward = goal_reward + coll_pen
 
     ''' Return the total reward (tensor of shape [self.world.batch_dim,]) '''
-    return torch.tensor([reward], device=self.world.device)
+    return reward
   
   # def reward(self, agent: Agent):
   #   reward = 0.0
@@ -295,7 +293,7 @@ class Scenario(BaseScenario):
 
 
 class BoidDynamics(Dynamics):
-    def __init__(self, world, constant_speed=0.5, max_steering_rate=0.5*math.pi, team=0):
+    def __init__(self, world, constant_speed=0.5, max_steering_rate=1*math.pi, team=0):
         super().__init__()
         self.constant_speed = constant_speed
         self.max_steering_rate = max_steering_rate  # max radians per second

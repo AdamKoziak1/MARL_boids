@@ -30,7 +30,7 @@ experiment_config.evaluation_interval = 120_000 # Interval in terms of frames, w
 experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviornemnts used in evaluation
 experiment_config.loggers = ["csv"] # Log to csv, usually you should use wandb
 
-# Loads from "benchmarl/conf/task/vmas/navigation.yaml"
+# Loads from "benchmarl/conf/task/vmas/boids.yaml"
 task = VmasTask.BOIDS.get_from_yaml()
 
 

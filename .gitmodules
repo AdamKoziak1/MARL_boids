@@ -1,0 +1,4 @@
+[submodule "BenchMARL"]
+	url = https://github.com/AdamKoziak1/BenchMARL.git
+[submodule "VectorizedMultiAgentSimulator"]
+	url = https://github.com/AdamKoziak1/VectorizedMultiAgentSimulator.git

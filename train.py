@@ -15,6 +15,7 @@ experiment_config = ExperimentConfig.get_from_yaml() # We start by loading the d
 # Override devices
 experiment_config.sampling_device = device
 experiment_config.train_device = device
+experiment_config.buffer_device = device # maybe not?
 
 experiment_config.max_n_frames = 10_000_000 # Number of frames before training ends
 experiment_config.gamma = 0.99
@@ -34,6 +35,8 @@ task = VmasTask.BOIDS.get_from_yaml()
 
 
 task.config = {
+    "n_agents": 10,
+    "max_steps": 400,
 }
 
 from benchmarl.algorithms import MappoConfig
@@ -54,23 +57,34 @@ algorithm_config = MappoConfig(
         minibatch_advantage=False,
     )
 
-from benchmarl.models.mlp import MlpConfig
+from benchmarl.models import GnnConfig, SequenceModelConfig, MlpConfig
+import torch_geometric
 
-model_config = MlpConfig(
-        num_cells=[256, 256], # Two layers with 256 neurons each
-        layer_class=torch.nn.Linear,
-        activation_class=torch.nn.Tanh,
-    )
+gnn_config = GnnConfig(
+    topology="from_pos", # Tell the GNN to build topology from positions and edge_radius
+    edge_radius=1, # The edge radius for the topology
+    self_loops=False,
+    gnn_class=torch_geometric.nn.conv.GATv2Conv,
+    gnn_kwargs={"add_self_loops": False, "residual": True}, # kwargs of GATv2Conv, residual is helpful in RL
+    position_key="pos",
+    pos_features=2,
+    velocity_key="vel",
+    vel_features=2,
+    exclude_pos_from_node_features=True, # Do we want to use pos just to build edge features or also keep it in node features? Here we remove it as we want to be invariant to system translations (we do not use absolute positions)
+)
+# We add an MLP layer to process GNN output node embeddings into actions
+mlp_config = MlpConfig.get_from_yaml()
 
-# Loads from "benchmarl/conf/model/layers/mlp.yaml" (in this case we use the defaults so it is the same)
-model_config = MlpConfig.get_from_yaml()
+# Chain them in a sequence
+model_config = SequenceModelConfig(model_configs=[gnn_config, mlp_config], intermediate_sizes=[256])
 critic_model_config = MlpConfig.get_from_yaml()
 
 from benchmarl.experiment import Experiment
 
-experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
+#experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
+experiment_config.max_n_frames = 50_000_000 # full training
 experiment_config.on_policy_n_envs_per_worker = 60 # Remove this line for full training
-experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
+#experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
 
 experiment = Experiment(
     task=task,

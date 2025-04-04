@@ -21,6 +21,7 @@ class Scenario(BaseScenario):
     self.world_size_x = kwargs.pop("world_size_x", 3)
     self.world_size_y = kwargs.pop("world_size_y", 3)
     self.plot_grid = True
+    self.agent_obs_range = kwargs.pop("agent_obs_range", 2)
 
     ##############################
     ###### INFO FROM KWARGS ######
@@ -87,7 +88,7 @@ class Scenario(BaseScenario):
       self.teams[team] = []
       self.total_goals[team] = torch.zeros(batch_dim, device=device)
       for agent_num in range(int(self.n_agents)):
-        #sensors = [SenseSphere(world)]
+        #sensors = [SenseSphere(world, range=self.agent_obs_range)]
         agent = Agent(
           name=f"team_{team}_agent_{agent_num}",
           collide=True,
@@ -174,6 +175,19 @@ class Scenario(BaseScenario):
   ############## observation function ##############
   ##################################################
   def observation(self, agent: Agent):
+    # Build intrinsic node features from the agent's own state.
+    # For example, concatenate: position (2), velocity (2), rotation (1), team indicator (1), and influence (1)
+    #team_feature = agent.team.unsqueeze(-1)  # shape: [batch_dim, 1]
+    #influence_feature = agent.influence.unsqueeze(-1)  # shape: [batch_dim, 1]
+    
+    # node_features = torch.cat([
+    #      agent.state.pos,    # 2 values: x, y
+    #      agent.state.vel,    # 2 values: vx, vy
+    #      agent.state.rot,    # 1 value: rotation (heading)
+    #      team_feature,       # 1 value: team indicator (e.g., 0 or 1)
+    #      #influence_feature   # 1 value: influence parameter
+    # ], dim=-1)  # Total dimension: 7
+
     # Flatten and concatenate sensor data into a single tensor
     obs = {
         "obs": torch.cat(
@@ -192,85 +206,6 @@ class Scenario(BaseScenario):
   #############################################
   ############## reward function ##############
   #############################################
-  # def reward(self, agent: Agent):
-  #   is_first = agent == self.world.agents[0]
-  #   is_last = agent == self.world.agents[-1]
-
-  #   ''' Taken from the discovery.py scenario '''
-  #   goal_reward = torch.zeros((self.batch_dim,), device=self.device)
-  #   if is_first:
-  #     ''' negative reward for time passing - don't think it's relevant for BOIDS '''
-  #     # self.time_rew = torch.full(
-  #     #   (self.world.batch_dim,),
-  #     #   self.time_penalty,
-  #     #   device=self.world.device,
-  #     # )
-
-  #     ''' updating tensor of all agent positions - shape [board_dimensions, num_agents] '''
-  #     self.agents_pos = torch.stack(
-  #       [a.state.pos for a in self.world.agents], dim=1
-  #     )
-  #     ''' updating tensor of all goal positions '''
-  #     self.goals_pos = torch.stack([g.state.pos for g in self.goals], dim=1)
-
-  #     ''' getting tensor with distances between reward positions and agent positions '''
-  #     self.agents_goals_dists = torch.cdist(self.agents_pos, self.goals_pos)
-
-  #     self.agents_per_goal = torch.sum(
-  #       (self.agents_goals_dists < self.goal_range).type(torch.int),
-  #       dim=1,
-  #     )
-
-  #     self.covered_goals = self.agents_per_goal >= self.goal_threshold
-
-  #     ''' Flat reward for each goal captured by the team '''
-  #     goal_reward = torch.zeros((self.batch_dim,), device=self.device)
-  #     # print(self.covered_goals)
-  #     # print(self.covered_goals.shape())
-  #     for goal_covered in self.covered_goals[0]:
-  #       if goal_covered:
-  #           goal_reward += self.flat_goal_reward  # Add flat reward for each goal covered
-
-  #   if is_last:
-  #     if self.goal_respawn:
-  #       occupied_positions_agents = [self.agents_pos]
-  #       for i, goal in enumerate(self.goals):
-  #         occupied_positions_goals = [
-  #           o.state.pos.unsqueeze(1)
-  #           for o in self.goals
-  #           if o is not goal
-  #         ]
-  #         occupied_positions = torch.cat(
-  #           occupied_positions_agents + occupied_positions_goals,
-  #           dim=1,
-  #         )
-  #         pos = ScenarioUtils.find_random_pos_for_entity(
-  #           occupied_positions,
-  #           env_index=None,
-  #           world=self.world,
-  #           min_dist_between_entities=self.min_distance_between_entities,
-  #           x_bounds=(-self.world.x_semidim, self.world.x_semidim),
-  #           y_bounds=(-self.world.y_semidim, self.world.y_semidim),
-  #         )
-
-  #         goal.state.pos[self.covered_goals[:, i]] = pos[
-  #           self.covered_goals[:, i]
-  #         ].squeeze(1)
-  #     else:
-  #       self.all_time_covered_goals += self.covered_goals
-  #       for i, goal in enumerate(self.goals):
-  #         goal.state.pos[self.covered_goals[:, i]] = self.get_outside_pos(
-  #           None
-  #         )[self.covered_goals[:, i]]
-
-  #   ''' Negative reward for touching boundaries (walls) '''
-  #   coll_pen = torch.where(abs(agent.state.pos[0][0]) == self.world_size_x or abs(agent.state.pos[0][1]) == self.world_size_y, -5, 0)
-    
-  #   ''' Combining goal reward and collision penalty '''
-  #   reward = goal_reward + coll_pen
-
-  #   ''' Return the total reward (tensor of shape [self.world.batch_dim,]) '''
-  #   return reward
 
   def reward(self, agent: Agent):
       team = agent.dynamics.team
@@ -350,7 +285,7 @@ class Scenario(BaseScenario):
       # Finally, return the reward for the agent's team (plus collision penalty).
       # The reward tensor is per environment.
       team_reward = self.team_goal_reward.get(team, torch.zeros_like(self.flat_goal_reward))
-      return team_reward + coll_pen
+      return team_reward #+ coll_pen
 
   #############################################
   ############## Extra_render ################
@@ -373,8 +308,6 @@ class Scenario(BaseScenario):
       geoms.append(range_circle)
 
     return geoms
-
-
 
 class BoidDynamics(Dynamics):
     def __init__(self, world, constant_speed=0.5, max_steering_rate=1*math.pi, team=0):
@@ -540,10 +473,11 @@ class Triangle(Shape):
 
 
 class SenseSphere(Sensor):
-  def __init__(self, world, range=1.0):
+  def __init__(self, world, range=1.0, team=0):
     super().__init__(world)
     self.range = range
     self._last_measurement = None
+    self.team=team
 
   def measure(self):
     agent_pos = self.agent.state.pos  # Current agent's position
@@ -575,7 +509,10 @@ class SenseSphere(Sensor):
 
     # Render the range of the SenseSphere as a circle around each agent
     circle = rendering.make_circle(radius=self.range)  # Create the sensor's circle based on range
-    circle.set_color(0, 0, 1, alpha=0.05)  # Set the color to blue with transparency
+    if self.team == 0:
+      circle.set_color(1, 0, 0, alpha=0.05)  # Set the color to blue with transparency
+    if self.team == 0:
+      circle.set_color(0, 1, 0, alpha=0.05)  # Set the color to blue with transparency
     xform = rendering.Transform()
     xform.set_translation(*self.agent.state.pos[env_index])  # Position the circle at the agent's position
     circle.add_attr(xform)

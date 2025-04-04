@@ -42,10 +42,11 @@ experiment_config.loggers = ["wandb"] # Log to csv, usually you should use wandb
 # Loads from "benchmarl/conf/task/vmas/boids.yaml"
 task = VmasTask.BOIDS.get_from_yaml()
 
-
+range = 3
 task.config = {
     "n_agents": 10,
     "max_steps": 400,
+    "range": range
 }
 
 from benchmarl.algorithms import MappoConfig
@@ -71,7 +72,7 @@ import torch_geometric
 
 gnn_config = GnnConfig(
     topology="from_pos", # Tell the GNN to build topology from positions and edge_radius
-    edge_radius=1.5, # The edge radius for the topology
+    edge_radius=range, # The edge radius for the topology
     self_loops=False,
     gnn_class=torch_geometric.nn.conv.GATv2Conv,
     gnn_kwargs={"add_self_loops": False, "residual": True}, # kwargs of GATv2Conv, residual is helpful in RL

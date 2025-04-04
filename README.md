@@ -4,7 +4,7 @@ A Multi-Agent Reinforcement Learning project evaluating the impact of learnable 
 ## Installation
 For Linux:
 ```
-git clone --recurse-submodules https://github.com/AdamKoziak1/MARL_boids.git
+git clone https://github.com/AdamKoziak1/MARL_boids.git
 cd MARL_boids/
 python -m venv venv
 source venv/bin/activate

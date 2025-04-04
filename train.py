@@ -30,6 +30,15 @@ experiment_config.evaluation_interval = 120_000 # Interval in terms of frames, w
 experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviornemnts used in evaluation
 experiment_config.loggers = ["csv"] # Log to csv, usually you should use wandb
 
+#experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
+experiment_config.max_n_frames = 50_000_000 # full training
+experiment_config.on_policy_n_envs_per_worker = 30 # Remove this line for full training
+#experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
+
+experiment_config.share_policy_params = False # parameter sharing off so there can be two teams
+experiment_config.loggers = ["wandb"] # Log to csv, usually you should use wandb
+
+
 # Loads from "benchmarl/conf/task/vmas/boids.yaml"
 task = VmasTask.BOIDS.get_from_yaml()
 
@@ -81,12 +90,6 @@ critic_model_config = MlpConfig.get_from_yaml()
 
 from benchmarl.experiment import Experiment
 
-#experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
-experiment_config.max_n_frames = 50_000_000 # full training
-experiment_config.on_policy_n_envs_per_worker = 30 # Remove this line for full training
-#experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
-
-experiment_config.share_policy_params = False # parameter sharing off so there can be two teams
 
 experiment = Experiment(
     task=task,

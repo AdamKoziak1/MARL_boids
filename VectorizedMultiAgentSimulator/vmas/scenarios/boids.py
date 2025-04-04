@@ -309,7 +309,7 @@ class Scenario(BaseScenario):
               # Here, captured.sum(dim=1) gives a [batch_dim] tensor.
               self.team_goal_reward[t] = captured.sum(dim=1).float() * self.flat_goal_reward
               self.total_goals[t] += captured.sum(dim=1).float()
-          print(f"team 0: {self.total_goals[t]}, team 1 {self.total_goals[1]}")
+          #print(f"team 0: {self.total_goals[0]}, team 1 {self.total_goals[1]}")
 
       # Handle goal respawning once per timestep.
       # We use the last agent to perform the respawn logic.

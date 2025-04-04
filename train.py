@@ -62,7 +62,7 @@ import torch_geometric
 
 gnn_config = GnnConfig(
     topology="from_pos", # Tell the GNN to build topology from positions and edge_radius
-    edge_radius=1, # The edge radius for the topology
+    edge_radius=1.5, # The edge radius for the topology
     self_loops=False,
     gnn_class=torch_geometric.nn.conv.GATv2Conv,
     gnn_kwargs={"add_self_loops": False, "residual": True}, # kwargs of GATv2Conv, residual is helpful in RL
@@ -83,8 +83,10 @@ from benchmarl.experiment import Experiment
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
 experiment_config.max_n_frames = 50_000_000 # full training
-experiment_config.on_policy_n_envs_per_worker = 60 # Remove this line for full training
+experiment_config.on_policy_n_envs_per_worker = 30 # Remove this line for full training
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
+
+experiment_config.share_policy_params = False # parameter sharing off so there can be two teams
 
 experiment = Experiment(
     task=task,

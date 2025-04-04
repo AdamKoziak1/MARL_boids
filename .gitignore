@@ -2,4 +2,5 @@ venv*
 *.pyc
 mappo*
 __pycache__
+videos*
 .idea

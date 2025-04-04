@@ -1,6 +1,6 @@
 venv*
 *.pyc
-mappo*
+mappo_boids*
 __pycache__
 videos*
 .idea

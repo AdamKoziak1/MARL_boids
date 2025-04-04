@@ -1,0 +1,4 @@
+defaults:
+  - vmas_boids_config
+  - _self_
+max_steps: 100

@@ -29,7 +29,7 @@ experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviorne
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
 experiment_config.max_n_frames = 50_160_000 # full training
-experiment_config.on_policy_n_envs_per_worker = 32 # Remove this line for full training
+experiment_config.on_policy_n_envs_per_worker = 600 # Remove this line for full training
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
 experiment_config.loggers = ["csv"] # csv or wandb
 experiment_config.checkpoint_interval = 240_000

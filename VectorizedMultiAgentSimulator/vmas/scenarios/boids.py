@@ -315,24 +315,24 @@ class Scenario(BaseScenario):
       range_circle.set_color(*self.goal_color.value)
       geoms.append(range_circle)
 
-    agent = self.world.agents[0]
+    #agent = self.world.agents[0]
     
     # --- Render influence parameter as text ---
-    if self.use_influence:
-      influence_val = agent.influence[env_index].item()
+    # if self.use_influence:
+    #   influence_val = agent.influence[env_index].item()
 
-      start = agent.state.pos[env_index]
-      end = agent.state.pos[env_index] + influence_val * torch.tensor([0,-1])
-      #end = agent.state.pos[env_index] + torch.tensor([0,-1])
-      arrow = make_arrow(start, end, arrow_width=0.05)
-      geoms.append(arrow)
+    #   start = agent.state.pos[env_index]
+    #   end = agent.state.pos[env_index] + influence_val * torch.tensor([0,-1])
+    #   #end = agent.state.pos[env_index] + torch.tensor([0,-1])
+    #   arrow = make_arrow(start, end, arrow_width=0.05)
+    #   geoms.append(arrow)
 
-    # # --- Draw arrows pointing to each goal ---
-    for goal in self.goals:
-      start = agent.state.pos[env_index]
-      end = goal.state.pos[env_index]
-      arrow = make_arrow(start, end, arrow_width=0.05)
-      geoms.append(arrow)
+    # # # --- Draw arrows pointing to each goal ---
+    # for goal in self.goals:
+    #   start = agent.state.pos[env_index]
+    #   end = goal.state.pos[env_index]
+    #   arrow = make_arrow(start, end, arrow_width=0.05)
+    #   geoms.append(arrow)
       
     return geoms
 

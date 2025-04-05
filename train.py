@@ -17,7 +17,6 @@ experiment_config.sampling_device = device
 experiment_config.train_device = device
 experiment_config.buffer_device = device # maybe not?
 
-experiment_config.max_n_frames = 10_000_000 # Number of frames before training ends
 experiment_config.gamma = 0.99
 experiment_config.on_policy_collected_frames_per_batch = 60_000 # Number of frames collected each iteration
 experiment_config.on_policy_n_minibatch_iters = 45
@@ -29,10 +28,12 @@ experiment_config.evaluation_interval = 120_000 # Interval in terms of frames, w
 experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviornemnts used in evaluation
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
-experiment_config.max_n_frames = 50_000_000 # full training
+experiment_config.max_n_frames = 50_080_000 # full training
 experiment_config.on_policy_n_envs_per_worker = 32 # Remove this line for full training
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
-experiment_config.loggers = ["wandb"] # csv or wandb
+experiment_config.loggers = ["csv"] # csv or wandb
+experiment_config.checkpoint_interval = 240_000
+experiment_config.keep_checkpoints_num = 5
 
 
 # Loads from "benchmarl/conf/task/vmas/boids.yaml"

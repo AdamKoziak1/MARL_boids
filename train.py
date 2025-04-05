@@ -28,7 +28,7 @@ experiment_config.evaluation_interval = 120_000 # Interval in terms of frames, w
 experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviornemnts used in evaluation
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
-experiment_config.max_n_frames = 50_080_000 # full training
+experiment_config.max_n_frames = 50_160_000 # full training
 experiment_config.on_policy_n_envs_per_worker = 32 # Remove this line for full training
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
 experiment_config.loggers = ["csv"] # csv or wandb
@@ -82,10 +82,10 @@ gnn_config = GnnConfig(
     velocity_key="vel",
     vel_features=2,
     exclude_pos_from_node_features=True, # Do we want to use pos just to build edge features or also keep it in node features? Here we remove it as we want to be invariant to system translations (we do not use absolute positions)
-    # influence_features=1, # for edge attributes. doesn't work for now.
-    # influence_key="influence",
-    # team_features=1,
-    # team_key="team",
+    influence_features=1, # for edge attributes. doesn't work for now.
+    influence_key="influence",
+    team_features=1,
+    team_key="team",
 )
 # We add an MLP layer to process GNN output node embeddings into actions
 mlp_config = MlpConfig.get_from_yaml()

@@ -78,7 +78,7 @@ if _has_torch_geometric:
             # cart = influence if team[row] == team[col] else 0
             # cart = cart.view(-1, 1) if cart.dim() == 1 else cart
 
-            print(torch.logical_not(torch.logical_xor(team[row], team[col])).shape, influence.shape, cart.shape)
+            #print(torch.logical_not(torch.logical_xor(team[row], team[col])).shape, influence.shape, cart.shape)
             if pseudo is not None:
                 pseudo = pseudo.view(-1, 1) if pseudo.dim() == 1 else pseudo
                 data.edge_attr = torch.cat([pseudo, cart.type_as(pseudo)], dim=-1)

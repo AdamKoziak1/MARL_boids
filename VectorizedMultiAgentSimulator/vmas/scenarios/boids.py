@@ -22,6 +22,8 @@ class Scenario(BaseScenario):
     self.world_size_y = kwargs.pop("world_size_y", 3)
     self.plot_grid = True
     self.agent_obs_range = kwargs.pop("agent_obs_range", 2)
+    self.use_influence = kwargs.pop("use_influence", True)
+    print(self.use_influence)
 
     ##############################
     ###### INFO FROM KWARGS ######
@@ -64,12 +66,9 @@ class Scenario(BaseScenario):
     world = World(
       batch_dim=batch_dim,  # Number of environments
       device=device,  # Use your hardware (GPU/CPU)
-      substeps=5,  # Substeps for simulation accuracy
+      substeps=3,  # Substeps for simulation accuracy
       collision_force=500,  # Collision force for agent interaction
       dt=0.1,  # Simulation timestep
-      drag=0.1,  # Optional drag for agent movement
-      linear_friction=0.05,  # Optional friction
-      angular_friction=0.02,  # Optional angular friction
       x_semidim=self.world_size_x, # bounds of the world
       y_semidim=self.world_size_y, # bounds of the world
     )
@@ -84,32 +83,32 @@ class Scenario(BaseScenario):
     ''' Adding agents '''
     self.teams = {}
     self.total_goals = {}
+
+    u_range=[1]
+    u_multiplier=[1]
+    if self.use_influence:
+      u_range=[1,1]
+      u_multiplier=[1,1]
     for team in range(self.n_teams):
       self.teams[team] = []
       self.total_goals[team] = torch.zeros(batch_dim, device=device)
       for agent_num in range(int(self.n_agents)):
-        #sensors = [SenseSphere(world, range=self.agent_obs_range)]
         agent = Agent(
           name=f"team_{team}_agent_{agent_num}",
           collide=True,
           rotatable=True,
           color=known_colors[team],
           render_action=True,
-          #sensors=sensors,
           shape=Triangle(),
-          u_range=[1],  # Ranges for actions
-          u_multiplier=[1],  # Action multipliers
-          dynamics=BoidDynamics(world=world, team=team)
+          u_range=u_range,  # Ranges for actions
+          u_multiplier=u_multiplier,  # Action multipliers
+          dynamics=BoidDynamics(world=world, team=team, use_influence=self.use_influence)
         )
         agent.group = f"team_{team}"  # team_0 or team_1
         if team == 0:
-          agent.team = torch.zeros(
-            batch_dim, device=device
-          )
+          agent.team = torch.zeros((batch_dim,1), device=device)
         else:
-          agent.team = torch.ones(
-            batch_dim, device=device
-          )
+          agent.team = torch.ones((batch_dim,1), device=device)
 
         agent.pos_rew = torch.zeros(
           batch_dim, device=device
@@ -117,6 +116,9 @@ class Scenario(BaseScenario):
         agent.agent_collision_rew = (
           agent.pos_rew.clone()
         )  # Tensor that will hold the collision reward fo the agent
+
+        if self.use_influence:
+          agent.influence = torch.zeros((batch_dim,1), device=device)
 
         self.teams[team].append(agent)
         world.add_agent(agent)
@@ -190,17 +192,15 @@ class Scenario(BaseScenario):
 
     # Flatten and concatenate sensor data into a single tensor
     obs = {
-        "obs": torch.cat(
-            [agent.state.pos - goal.state.pos for goal in self.goals] +
-            [agent.state.pos - teammate.state.pos for teammate in self.teams[agent.dynamics.team]] +
-            [agent.state.pos - enemy.state.pos for enemy in self.teams[agent.dynamics.team ^ 1]],
-            dim=-1
-        ),
+        "goals": torch.cat([agent.state.pos - goal.state.pos for goal in self.goals], dim=-1),
         "pos": agent.state.pos,
         "vel": agent.state.vel,
-        #"team": agent.team,
-        #"influence": 
+        "rot": agent.state.rot,
+        "team": agent.team,
+        "influence": agent.influence,
     }
+    #print(agent.state.pos.shape, agent.state.vel.shape, agent.team.shape, agent.influence.shape)
+    #print([f"{key}: {obs[key].shape}, " for key in obs.keys()])
     return obs
 
   #############################################
@@ -310,16 +310,17 @@ class Scenario(BaseScenario):
     return geoms
 
 class BoidDynamics(Dynamics):
-    def __init__(self, world, constant_speed=0.5, max_steering_rate=1*math.pi, team=0):
+    def __init__(self, world, constant_speed=0.65, max_steering_rate=1*math.pi, team=0, use_influence=True):
         super().__init__()
         self.constant_speed = constant_speed
         self.max_steering_rate = max_steering_rate  # max radians per second
         self.world = world
         self.team = team
+        self.use_influence = use_influence
 
     @property
     def needed_action_size(self):
-        return 1  # Steering input only
+        return 2 if self.use_influence else 1 
 
     def reset(self, env_index: int):
         if self.team == 0:
@@ -334,13 +335,15 @@ class BoidDynamics(Dynamics):
             ],
             dim=1
         )
+        if self.use_influence:
+          self._agent.influence = torch.zeros((self.world.batch_dim,1), device=self.world.device)
         self._agent.state.force = torch.zeros_like(self._agent.state.force)
 
     def zero_grad(self):
         pass
 
     def clone(self):
-        return BoidDynamics(self.world, self.constant_speed, self.max_steering_rate)
+        return BoidDynamics(self.world, constant_speed=self.constant_speed, max_steering_rate=self.max_steering_rate, team=self.team, use_influence=self.use_influence)
     
     def process_action(self):
         dt = self.world.dt
@@ -358,7 +361,8 @@ class BoidDynamics(Dynamics):
             ],
             dim=1
         )
-
+        if self.use_influence:
+          self._agent.influence = (self._agent.influence + (self._agent.action.u[:, 1].clamp(-1, 1) * 0.5)).clamp(0, 1) # add or subtract 0.2 max
         # Set force to zero to avoid external forces
         #self._agent.state.force = torch.zeros_like(self._agent.state.force)
 

@@ -4,3 +4,4 @@ mappo_boids*
 __pycache__
 videos*
 .idea
+.vscode

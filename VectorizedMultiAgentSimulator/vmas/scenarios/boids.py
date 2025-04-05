@@ -35,7 +35,7 @@ class Scenario(BaseScenario):
     self.min_distance_between_entities = (kwargs.pop("agent_radius", 0.1) * 2 + 0.05)
 
     ''' Agent entities '''
-    self.n_agents = kwargs.pop("n_agents", 10)
+    self.n_agents = kwargs.pop("n_agents", 6)
     self.n_teams = kwargs.pop("teams", 2)
     
 
@@ -178,28 +178,39 @@ class Scenario(BaseScenario):
   ##################################################
   def observation(self, agent: Agent):
     # Build intrinsic node features from the agent's own state.
-    # For example, concatenate: position (2), velocity (2), rotation (1), team indicator (1), and influence (1)
-    #team_feature = agent.team.unsqueeze(-1)  # shape: [batch_dim, 1]
-    #influence_feature = agent.influence.unsqueeze(-1)  # shape: [batch_dim, 1]
+    if agent == self.world.agents[0]:
+      # Stack the goal positions for the current batch: shape [batch_dim, n_goals, 2]
+      self.goal_positions = torch.stack([goal.state.pos for goal in self.goals], dim=1)
+      # Expand the agent position to shape [batch_dim, 1, 2] for broadcasting
+    agent_pos = agent.state.pos.unsqueeze(1)
     
-    # node_features = torch.cat([
-    #      agent.state.pos,    # 2 values: x, y
-    #      agent.state.vel,    # 2 values: vx, vy
-    #      agent.state.rot,    # 1 value: rotation (heading)
-    #      team_feature,       # 1 value: team indicator (e.g., 0 or 1)
-    #      #influence_feature   # 1 value: influence parameter
-    # ], dim=-1)  # Total dimension: 7
+    # Compute distances using torch.cdist: returns shape [batch_dim, 1, n_goals]
+    distances = torch.cdist(agent_pos, self.goal_positions).squeeze(1)  # now shape: [batch_dim, n_goals]
 
-    # Flatten and concatenate sensor data into a single tensor
+    # Compute the vector differences: shape [batch_dim, n_goals, 2]
+    vec = self.goal_positions - agent_pos
+    # Compute absolute angles (in radians) of these vectors using atan2
+    angles = torch.atan2(vec[:, :, 1], vec[:, :, 0])  # shape: [batch_dim, n_goals]
+    
+    # Ensure the agent's heading is 1D (shape [batch_dim])
+    agent_heading = agent.state.rot.squeeze(-1) if agent.state.rot.dim() > 1 else agent.state.rot
+    
+    # Compute the relative angles and wrap them to [-pi, pi]
+    two_pi = 2 * math.pi
+    rel_angles = torch.remainder(angles - agent_heading.unsqueeze(1) + math.pi, two_pi) - math.pi
+    sorted_distances, indices = torch.sort(distances, dim=1)
+    sorted_rel_angles = rel_angles.gather(dim=1, index=indices)
+
     obs = {
-        "goals": torch.cat([agent.state.pos - goal.state.pos for goal in self.goals], dim=-1),
+        "goal_distances": sorted_distances,
+        "goal_rel_angles": sorted_rel_angles,
         "pos": agent.state.pos,
         "vel": agent.state.vel,
         "rot": agent.state.rot,
         "team": agent.team,
-        "influence": agent.influence,
     }
-    #print(agent.state.pos.shape, agent.state.vel.shape, agent.team.shape, agent.influence.shape)
+    if self.use_influence:
+       obs["influence"] = agent.influence
     #print([f"{key}: {obs[key].shape}, " for key in obs.keys()])
     return obs
 
@@ -295,9 +306,6 @@ class Scenario(BaseScenario):
 
     geoms: List[Geom] = []
 
-    # for id, team in enumerate(self.teams):
-    #   score = rendering.TextLine(text=f"team {id} reward: {self.team_goal_reward.get(team, torch.zeros_like(self.flat_goal_reward))}")
-    #   geoms.append(score)
     # Goal covering ranges
     for goal in self.goals:
       range_circle = rendering.make_circle(goal.range, filled=False)
@@ -307,7 +315,83 @@ class Scenario(BaseScenario):
       range_circle.set_color(*self.goal_color.value)
       geoms.append(range_circle)
 
+    agent = self.world.agents[0]
+    
+    # --- Render influence parameter as text ---
+    if self.use_influence:
+      influence_val = agent.influence[env_index].item()
+
+      start = agent.state.pos[env_index]
+      end = agent.state.pos[env_index] + influence_val * torch.tensor([0,-1])
+      #end = agent.state.pos[env_index] + torch.tensor([0,-1])
+      arrow = make_arrow(start, end, arrow_width=0.05)
+      geoms.append(arrow)
+
+    # # --- Draw arrows pointing to each goal ---
+    for goal in self.goals:
+      start = agent.state.pos[env_index]
+      end = goal.state.pos[env_index]
+      arrow = make_arrow(start, end, arrow_width=0.05)
+      geoms.append(arrow)
+      
     return geoms
+
+def compute_relative_angle_and_dist(agent_heading, agent_pos, goal_pos):
+    """
+    Compute the relative angle (in radians) between the agent's heading and the vector pointing to the goal.
+    """
+    # Compute vector from agent to goal
+    vec = goal_pos - agent_pos  # shape: [batch_dim, 2]
+    
+    # Compute angle to goal using element-wise atan2.
+    # Note: We use vec[:, 1] for the y-component and vec[:, 0] for the x-component.
+    angle_to_goal = torch.atan2(vec[:, 1], vec[:, 0])  # shape: [batch_dim]
+    
+    # Ensure agent_heading is 1D.
+    if agent_heading.dim() > 1:
+        agent_heading = agent_heading.squeeze(1)
+    
+    # Compute relative angle and wrap it to [-pi, pi].
+    two_pi = 2 * math.pi
+    rel_angle = torch.remainder(angle_to_goal - agent_heading + math.pi, two_pi) - math.pi
+    return rel_angle
+
+def make_arrow(start, end, arrow_width=0.05):
+    """
+    Create an arrow geometry from start to end.
+    
+    The arrow consists of a line and an arrowhead created as a filled polygon.
+    """
+    # Convert start and end to numpy arrays (if they are tensors or lists)
+    start_np = np.array(start if isinstance(start, (list, tuple, np.ndarray)) else start.tolist())
+    end_np = np.array(end if isinstance(end, (list, tuple, np.ndarray)) else end.tolist())
+    
+    # Create the line geometry between start and end.
+    line = rendering.Line(start=tuple(start_np), end=tuple(end_np), width=1)
+    
+    # Compute normalized direction vector.
+    direction = end_np - start_np
+    length = np.linalg.norm(direction)
+    if length == 0:
+        return line  # Return just the line if start and end are identical.
+    direction_norm = direction / length
+    # Perpendicular vector (rotated by 90 degrees).
+    perp = np.array([-direction_norm[1], direction_norm[0]])
+    
+    # Determine the arrowhead dimensions.
+    head_length = arrow_width * 3  # Adjust this multiplier as needed.
+    head_base = end_np - direction_norm * head_length
+    left_point = head_base + perp * arrow_width
+    right_point = head_base - perp * arrow_width
+    # Create the arrowhead polygon using the three computed vertices.
+    arrow_head = rendering.make_polygon(
+        [tuple(end_np), tuple(left_point), tuple(right_point)],
+        filled=True,
+        draw_border=True
+    )
+    # Group the line and arrowhead into a compound geometry.
+    arrow_geom = rendering.Compound([line, arrow_head])
+    return arrow_geom
 
 class BoidDynamics(Dynamics):
     def __init__(self, world, constant_speed=0.65, max_steering_rate=1*math.pi, team=0, use_influence=True):
@@ -362,7 +446,7 @@ class BoidDynamics(Dynamics):
             dim=1
         )
         if self.use_influence:
-          self._agent.influence = (self._agent.influence + (self._agent.action.u[:, 1].clamp(-1, 1) * 0.5)).clamp(0, 1) # add or subtract 0.2 max
+          self._agent.influence = (self._agent.influence + (self._agent.action.u[:, 1].unsqueeze(1).clamp(-1, 1) * 0.5)).clamp(0, 1)
         # Set force to zero to avoid external forces
         #self._agent.state.force = torch.zeros_like(self._agent.state.force)
 

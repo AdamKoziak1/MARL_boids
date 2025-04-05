@@ -15,14 +15,13 @@ experiment_config = ExperimentConfig.get_from_yaml() # We start by loading the d
 # Override devices
 experiment_config.sampling_device = device
 experiment_config.train_device = device
-experiment_config.buffer_device = device # maybe not?
+#experiment_config.buffer_device = device # maybe not?
 
 experiment_config.max_n_frames = 10_000_000 # Number of frames before training ends
 experiment_config.gamma = 0.99
 experiment_config.on_policy_collected_frames_per_batch = 60_000 # Number of frames collected each iteration
-experiment_config.on_policy_n_envs_per_worker = 600 # Number of vmas vectorized enviornemnts (each will collect 100 steps, see max_steps in task_config -> 600 * 100 = 60_000 the number above)
 experiment_config.on_policy_n_minibatch_iters = 45
-experiment_config.on_policy_minibatch_size = 4096
+experiment_config.on_policy_minibatch_size = 4096 # 4096
 experiment_config.evaluation = True
 experiment_config.render = True
 experiment_config.share_policy_params = True # Policy parameter sharing on
@@ -32,21 +31,26 @@ experiment_config.loggers = ["csv"] # Log to csv, usually you should use wandb
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
 experiment_config.max_n_frames = 50_000_000 # full training
-experiment_config.on_policy_n_envs_per_worker = 30 # Remove this line for full training
+experiment_config.on_policy_n_envs_per_worker = 16 # Number of vmas vectorized enviornemnts 
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
 
-experiment_config.share_policy_params = False # parameter sharing off so there can be two teams
-experiment_config.loggers = ["wandb"] # Log to csv, usually you should use wandb
+experiment_config.share_policy_params = True # parameter sharing off so there can be two teams
+#experiment_config.loggers = ["wandb"] # Log to csv, usually you should use wandb
 
 
 # Loads from "benchmarl/conf/task/vmas/boids.yaml"
 task = VmasTask.BOIDS.get_from_yaml()
 
 range = 3
+world_size = 3
+
 task.config = {
-    "n_agents": 10,
+    "n_agents": 8,
     "max_steps": 400,
-    "range": range
+    "agent_obs_range": range,
+    "world_size_y": world_size,
+    "world_size_x": world_size,
+    "use_influence": True,
 }
 
 from benchmarl.algorithms import MappoConfig
@@ -81,6 +85,10 @@ gnn_config = GnnConfig(
     velocity_key="vel",
     vel_features=2,
     exclude_pos_from_node_features=True, # Do we want to use pos just to build edge features or also keep it in node features? Here we remove it as we want to be invariant to system translations (we do not use absolute positions)
+    influence_features=1,
+    influence_key="influence",
+    team_features=1,
+    team_key="team",
 )
 # We add an MLP layer to process GNN output node embeddings into actions
 mlp_config = MlpConfig.get_from_yaml()

@@ -41,13 +41,14 @@ task = VmasTask.BOIDS.get_from_yaml()
 
 range = 1.5
 world_size = 3
+use_influence = False
 task.config = {
     "n_agents": 10,
     "max_steps": 400,
     "agent_obs_range": range,
     "world_size_y": world_size,
     "world_size_x": world_size,
-    "use_influence": True,
+    "use_influence": use_influence,
 }
 
 from benchmarl.algorithms import MappoConfig
@@ -82,11 +83,13 @@ gnn_config = GnnConfig(
     velocity_key="vel",
     vel_features=2,
     exclude_pos_from_node_features=True, # Do we want to use pos just to build edge features or also keep it in node features? Here we remove it as we want to be invariant to system translations (we do not use absolute positions)
-    influence_features=1, # for edge attributes. doesn't work for now.
-    influence_key="influence",
     team_features=1,
     team_key="team",
 )
+if use_influence:
+    gnn_config.influence_key="influence" # edge attributes for influence
+    gnn_config.influence_features=1
+
 # We add an MLP layer to process GNN output node embeddings into actions
 mlp_config = MlpConfig.get_from_yaml()
 

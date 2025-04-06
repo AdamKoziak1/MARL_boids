@@ -47,7 +47,7 @@ task.config = {
     "agent_obs_range": range,
     "world_size_y": world_size,
     "world_size_x": world_size,
-    "use_influence": False,
+    "use_influence": True,
 }
 
 from benchmarl.algorithms import MappoConfig

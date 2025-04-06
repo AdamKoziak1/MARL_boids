@@ -34,9 +34,51 @@ if _has_torch_geometric:
         def __call__(self, data):
             (row, col), vel, pseudo = data.edge_index, data.vel, data.edge_attr
 
+            #print("vel", row.shape, col.shape, vel.shape, vel[row].shape, vel[col].shape)
             cart = vel[row] - vel[col]
             cart = cart.view(-1, 1) if cart.dim() == 1 else cart
 
+            if pseudo is not None:
+                pseudo = pseudo.view(-1, 1) if pseudo.dim() == 1 else pseudo
+                data.edge_attr = torch.cat([pseudo, cart.type_as(pseudo)], dim=-1)
+            else:
+                data.edge_attr = cart
+            return data
+        
+    class _IsFriendly(BaseTransform):
+        """Transform that reads graph.team and writes (node1.team == node2.team) in the edge attributes"""
+
+        def __init__(self):
+            pass
+
+        def __call__(self, data):
+            (row, col), team, pseudo = data.edge_index, data.team, data.edge_attr
+            cart = torch.logical_not(torch.logical_xor(team[row], team[col]))
+            
+            cart = cart.view(-1, 1) if cart.dim() == 1 else cart
+
+            if pseudo is not None:
+                pseudo = pseudo.view(-1, 1) if pseudo.dim() == 1 else pseudo
+                data.edge_attr = torch.cat([pseudo, cart.type_as(pseudo)], dim=-1)
+            else:
+                data.edge_attr = cart
+            return data
+        
+                
+    class _MaskedInfluence(BaseTransform):
+        """Transform that reads graph.influence, graph.team and sets influence to 0 if it's on the other team in the edge attributes"""
+
+        def __init__(self):
+            pass
+
+        def __call__(self, data):
+            (row, col), team, influence, pseudo = data.edge_index, data.team, data.influence, data.edge_attr
+            cart = torch.logical_not(torch.logical_xor(team[row], team[col])) * influence[col]
+            cart = cart.view(-1, 1) if cart.dim() == 1 else cart
+            # cart = influence if team[row] == team[col] else 0
+            # cart = cart.view(-1, 1) if cart.dim() == 1 else cart
+
+            #print(torch.logical_not(torch.logical_xor(team[row], team[col])).shape, influence.shape, cart.shape)
             if pseudo is not None:
                 pseudo = pseudo.view(-1, 1) if pseudo.dim() == 1 else pseudo
                 data.edge_attr = torch.cat([pseudo, cart.type_as(pseudo)], dim=-1)
@@ -132,6 +174,10 @@ class Gnn(Model):
         edge_radius: Optional[float],
         pos_features: Optional[int],
         vel_features: Optional[int],
+        influence_features: Optional[int],
+        team_features: Optional[int],
+        influence_key: Optional[str],
+        team_key: Optional[str],
         **kwargs,
     ):
         self.topology = topology
@@ -142,26 +188,33 @@ class Gnn(Model):
         self.edge_radius = edge_radius
         self.pos_features = pos_features
         self.vel_features = vel_features
+        self.influence_features = influence_features
+        self.team_features = team_features
+        self.influence_key = influence_key
+        self.team_key = team_key
 
         super().__init__(**kwargs)
 
         if self.pos_features > 0:
             self.pos_features += 1  # We will add also 1-dimensional distance
-        self.edge_features = self.pos_features + self.vel_features
+        self.edge_features = self.pos_features + self.vel_features + self.influence_features + self.team_features
         self.input_features = sum(
             [
                 spec.shape[-1]
                 for key, spec in self.input_spec.items(True, True)
-                if _unravel_key_to_tuple(key)[-1] not in (position_key, velocity_key)
+                if _unravel_key_to_tuple(key)[-1] not in (position_key, velocity_key, influence_key, team_key)
             ]
         )  # Input keys
         if self.position_key is not None and not self.exclude_pos_from_node_features:
             self.input_features += self.pos_features - 1
         if self.velocity_key is not None:
             self.input_features += self.vel_features
+        if self.influence_key is not None:
+            self.input_features += self.influence_features
+        if self.team_key is not None:
+            self.input_features += self.team_features
 
         self.output_features = self.output_leaf_spec.shape[-1]
-
         if gnn_kwargs is None:
             gnn_kwargs = {}
         gnn_kwargs.update(
@@ -171,14 +224,14 @@ class Gnn(Model):
             "edge_dim" in inspect.getfullargspec(gnn_class).args
         )
         if (
-            self.position_key is not None or self.velocity_key is not None
+            self.position_key is not None or self.velocity_key is not None or self.influence_key is not None or self.team_key is not None
         ) and not self.gnn_supports_edge_attrs:
             warnings.warn(
                 "Position key or velocity key provided but GNN class does not support edge attributes. "
                 "These keys will not be used for computing edge features."
             )
         if (
-            position_key is not None or velocity_key is not None
+            position_key is not None or velocity_key is not None or self.influence_key is not None or self.team_key is not None
         ) and self.gnn_supports_edge_attrs:
             gnn_kwargs.update({"edge_dim": self.edge_features})
 
@@ -196,6 +249,8 @@ class Gnn(Model):
         )
         self._full_position_key = None
         self._full_velocity_key = None
+        self._full_influence_key = None
+        self._full_team_key = None
 
     def _perform_checks(self):
         super()._perform_checks()
@@ -272,7 +327,7 @@ class Gnn(Model):
             tensordict.get(in_key)
             for in_key in self.in_keys
             if _unravel_key_to_tuple(in_key)[-1]
-            not in (self.position_key, self.velocity_key)
+            not in (self.position_key, self.velocity_key, self.influence_key, self.team_key)
         ]
 
         # Retrieve position
@@ -312,6 +367,41 @@ class Gnn(Model):
         else:
             vel = None
 
+        # Retrieve influence
+        if self.influence_key is not None:
+            if self._full_influence_key is None:  # Run once to find full key
+                self._full_influence_key = self._get_key_terminating_with(
+                    list(tensordict.keys(True, True)), self.influence_key
+                )
+                influence = tensordict.get(self._full_influence_key)
+                if influence.shape[-1] != self.influence_features:
+                    raise ValueError(
+                        f"influence key in tensordict is {influence.shape[-1]}-dimensional, "
+                        f"while model was configured with influence_features={self.influence_features}"
+                    )
+            else:
+                influence = tensordict.get(self._full_influence_key)
+            input.append(influence)
+        else:
+            influence = None
+        # Retrieve team
+        if self.team_key is not None:
+            if self._full_team_key is None:  # Run once to find full key
+                self._full_team_key = self._get_key_terminating_with(
+                    list(tensordict.keys(True, True)), self.team_key
+                )
+                team = tensordict.get(self._full_team_key)
+                if team.shape[-1] != self.team_features:
+                    raise ValueError(
+                        f"team key in tensordict is {team.shape[-1]}-dimensional, "
+                        f"while model was configured with team_features={self.team_features}"
+                    )
+            else:
+                team = tensordict.get(self._full_team_key)
+            input.append(team)
+        else:
+            team = None
+
         input = torch.cat(input, dim=-1)
         batch_size = input.shape[:-2]
 
@@ -322,6 +412,8 @@ class Gnn(Model):
             vel=vel,
             self_loops=self.self_loops,
             edge_radius=self.edge_radius,
+            team=team,
+            influence=influence,
         )
         forward_gnn_params = {
             "x": graph.x,
@@ -415,6 +507,8 @@ def _batch_from_dense_to_ptg(
     pos: Tensor = None,
     vel: Tensor = None,
     edge_radius: Optional[float] = None,
+    influence: Tensor = None,
+    team: Tensor = None,
 ) -> torch_geometric.data.Batch:
     batch_size = prod(x.shape[:-2])
     n_agents = x.shape[-2]
@@ -423,6 +517,10 @@ def _batch_from_dense_to_ptg(
         pos = pos.view(-1, pos.shape[-1])
     if vel is not None:
         vel = vel.view(-1, vel.shape[-1])
+    if influence is not None:
+        influence = influence.view(-1, influence.shape[-1])
+    if team is not None:
+        team = team.view(-1, team.shape[-1])
 
     b = torch.arange(batch_size, device=x.device)
 
@@ -432,6 +530,8 @@ def _batch_from_dense_to_ptg(
     graphs.x = x
     graphs.pos = pos
     graphs.vel = vel
+    graphs.influence = influence
+    graphs.team = team
     graphs.edge_attr = None
 
     if edge_index is not None:
@@ -457,7 +557,10 @@ def _batch_from_dense_to_ptg(
         graphs = torch_geometric.transforms.Distance(norm=False)(graphs)
     if vel is not None:
         graphs = _RelVel()(graphs)
-
+    if team is not None:
+        graphs = _IsFriendly()(graphs)
+        if influence is not None:
+            graphs = _MaskedInfluence()(graphs)
     return graphs
 
 
@@ -477,6 +580,10 @@ class GnnConfig(ModelConfig):
     vel_features: Optional[int] = 0
     exclude_pos_from_node_features: Optional[bool] = None
     edge_radius: Optional[float] = None
+    influence_features: Optional[int] = 0
+    team_features: Optional[int] = 0
+    influence_key: Optional[str] = None
+    team_key: Optional[str] = None
 
     @staticmethod
     def associated_class():

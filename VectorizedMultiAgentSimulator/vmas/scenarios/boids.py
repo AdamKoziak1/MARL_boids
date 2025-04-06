@@ -21,7 +21,7 @@ class Scenario(BaseScenario):
     self.world_size_x = kwargs.pop("world_size_x", 3)
     self.world_size_y = kwargs.pop("world_size_y", 3)
     self.plot_grid = True
-    self.agent_obs_range = kwargs.pop("agent_obs_range", 2)
+    self.agent_obs_range = kwargs.pop("agent_obs_range", 1.5)
     self.use_influence = kwargs.pop("use_influence", True)
     print(self.use_influence)
 
@@ -315,24 +315,42 @@ class Scenario(BaseScenario):
       range_circle.set_color(*self.goal_color.value)
       geoms.append(range_circle)
 
-    #agent = self.world.agents[0]
-    
-    # --- Render influence parameter as text ---
-    # if self.use_influence:
-    #   influence_val = agent.influence[env_index].item()
 
-    #   start = agent.state.pos[env_index]
-    #   end = agent.state.pos[env_index] + influence_val * torch.tensor([0,-1])
-    #   #end = agent.state.pos[env_index] + torch.tensor([0,-1])
-    #   arrow = make_arrow(start, end, arrow_width=0.05)
-    #   geoms.append(arrow)
+
+    for agent in self.world.agents:
+      if agent == self.world.agents[0]:
+      # Stack the goal positions for the current batch: shape [batch_dim, n_goals, 2]
+        self.goal_positions = torch.stack([goal.state.pos for goal in self.goals], dim=1)
+      # Expand the agent position to shape [batch_dim, 1, 2] for broadcasting
+      agent_pos = agent.state.pos.unsqueeze(1)
+    
+    # Compute distances using torch.cdist: returns shape [batch_dim, 1, n_goals]
+      distances = torch.cdist(agent_pos, self.goal_positions).squeeze(1)  # now shape: [batch_dim, n_goals]
+      # if self.use_influence:
+         
+      #   influence_val = agent.influence[env_index].item()
+
+      #   start = agent.state.pos[env_index]
+      #   #end = agent.state.pos[env_index] + influence_val * torch.tensor([0,-1])
+      #   end = agent.state.pos[env_index] + torch.tensor([0,1], device=self.world.device)
+      #   arrow = make_arrow(start, end, arrow_width=0.05)
+      #   geoms.append(arrow)
 
     # # # --- Draw arrows pointing to each goal ---
-    # for goal in self.goals:
-    #   start = agent.state.pos[env_index]
-    #   end = goal.state.pos[env_index]
-    #   arrow = make_arrow(start, end, arrow_width=0.05)
-    #   geoms.append(arrow)
+      for id, goal in enumerate(self.goals):
+        start = agent.state.pos[env_index]
+        end = goal.state.pos[env_index]
+        distance = torch.sum(torch.square(start - end), axis=-1)
+        if distance.item() < self.agent_obs_range:
+          arrow = make_arrow(start, end, arrow_width=0.05)
+          geoms.append(arrow)
+      for other_agent in self.world.agents:
+        start = agent.state.pos[env_index]
+        end = other_agent.state.pos[env_index]
+        distance = torch.sum(torch.square(start - end), axis=-1)
+        if distance.item() < self.agent_obs_range:
+          arrow = make_arrow(start, end, arrow_width=0.05)
+          geoms.append(arrow)
       
     return geoms
 

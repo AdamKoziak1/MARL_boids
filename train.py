@@ -15,7 +15,7 @@ experiment_config = ExperimentConfig.get_from_yaml() # We start by loading the d
 # Override devices
 experiment_config.sampling_device = device
 experiment_config.train_device = device
-experiment_config.buffer_device = device # maybe not?
+experiment_config.buffer_device = device
 
 experiment_config.gamma = 0.99
 experiment_config.on_policy_collected_frames_per_batch = 60_000 # Number of frames collected each iteration
@@ -28,10 +28,10 @@ experiment_config.evaluation_interval = 120_000 # Interval in terms of frames, w
 experiment_config.evaluation_episodes = 200 # Number of vmas vectorized enviornemnts used in evaluation
 
 #experiment_config.max_n_frames = 6_000 # Runs one iteration, change to 50_000_000 for full training
-experiment_config.max_n_frames = 50_160_000 # full training
+experiment_config.max_n_frames = 6_000_000 # full training
 experiment_config.on_policy_n_envs_per_worker = 600 # Remove this line for full training
 #experiment_config.on_policy_n_minibatch_iters = 1 # Remove this line for full training
-experiment_config.loggers = ["csv"] # csv or wandb
+experiment_config.loggers = ["wandb"] # csv or wandb
 experiment_config.checkpoint_interval = 240_000
 experiment_config.keep_checkpoints_num = 5
 
@@ -39,15 +39,15 @@ experiment_config.keep_checkpoints_num = 5
 # Loads from "benchmarl/conf/task/vmas/boids.yaml"
 task = VmasTask.BOIDS.get_from_yaml()
 
-range = 3
+range = 1.5
 world_size = 3
 task.config = {
-    "n_agents": 6,
+    "n_agents": 10,
     "max_steps": 400,
     "agent_obs_range": range,
     "world_size_y": world_size,
     "world_size_x": world_size,
-    "use_influence": True,
+    "use_influence": False,
 }
 
 from benchmarl.algorithms import MappoConfig
